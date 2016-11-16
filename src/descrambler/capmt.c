@@ -213,6 +213,8 @@ typedef struct capmt_service {
 
   /* PIDs list */
   uint16_t ct_pids[MAX_PIDS];
+  uint16_t ct_types[MAX_PIDS];
+  uint16_t ct_vpid;
 } capmt_service_t;
 
 /**
@@ -744,11 +746,12 @@ capmt_flush_queue(capmt_t *capmt, int del_only)
  *
  */
 static void 
-capmt_send_stop(capmt_service_t *t)
+capmt_send_stop(capmt_service_t *ct)
 {
-  mpegts_service_t *s = (mpegts_service_t *)t->td_service;
-  capmt_t *capmt = t->ct_capmt;
+  mpegts_service_t *s = (mpegts_service_t *)ct->td_service;
+  capmt_t *capmt = ct->ct_capmt;
   int oscam = capmt->capmt_oscam;
+  int i;
 
   lock_assert(&capmt->capmt_mutex);
 
@@ -786,19 +789,24 @@ capmt_send_stop(capmt_service_t *t)
     memcpy(&buf[pos], &head, sizeof(head));
     pos    += sizeof(head);
 
-    uint8_t end[] = {
-      0x01, (t->ct_pids[0] >> 8) & 0xFF, t->ct_pids[0] & 0xFF, 0x00, 0x06 };
-    memcpy(&buf[pos], end, sizeof(end));
-    pos    += sizeof(end);
+    buf[10] = ((pos - 5 - 7) & 0xF00) >> 8;
+    buf[11] = ((pos - 5 - 7) & 0xFF);
+
+    for ( i = 0; i < 32 ; i++ ) {
+      if (  ct->ct_types[i] ) {
+        uint8_t end[] = {
+          ct->ct_types[i]  & 0xFF, (ct->ct_pids[i] >> 8) & 0xFF, ct->ct_pids[i] & 0xFF, 0x00, 0x00 };
+        memcpy(&buf[pos], end, sizeof(end));
+        pos += sizeof(end);
+      }
+    }
     buf[4]  = ((pos - 6) >> 8);
     buf[5]  = ((pos - 6) & 0xFF);
     buf[7]  = s->s_dvb_service_id >> 8;
     buf[8]  = s->s_dvb_service_id & 0xFF;
     buf[9]  = 1;
-    buf[10] = ((pos - 5 - 12) & 0xF00) >> 8;
-    buf[11] = ((pos - 5 - 12) & 0xFF);
   
-    capmt_queue_msg(capmt, t->ct_adapter, s->s_dvb_service_id,
+    capmt_queue_msg(capmt, ct->ct_adapter, s->s_dvb_service_id,
                     buf, pos, CAPMT_MSG_CLEAR);
   }
 }
@@ -1093,6 +1101,7 @@ capmt_process_key(capmt_t *capmt, uint8_t adapter, uint32_t index,
   ca_info_t *cai;
   uint16_t *pids;
   int i, j;
+  int is_vpid = 0;
 
   pthread_mutex_lock(&capmt->capmt_mutex);
   LIST_FOREACH(ct, &capmt->capmt_services, ct_link) {
@@ -1118,6 +1127,8 @@ capmt_process_key(capmt_t *capmt, uint8_t adapter, uint32_t index,
       if (pids[i] == 0) continue;
       for (j = 0; j < MAX_PIDS; j++) {
         if (ct->ct_pids[j] == 0) break;
+        if (ct->ct_vpid == pids[i])
+          is_vpid = 1;
         if (ct->ct_pids[j] == pids[i])
           goto found;
       }
@@ -1125,7 +1136,7 @@ capmt_process_key(capmt_t *capmt, uint8_t adapter, uint32_t index,
     continue;
 
 found:
-    descrambler_keys((th_descrambler_t *)ct, type, even, odd);
+    descrambler_keys((th_descrambler_t *)ct, type, index, pids[i], is_vpid, even, odd);
   }
   pthread_mutex_unlock(&capmt->capmt_mutex);
 }
@@ -1148,6 +1159,10 @@ capmt_process_notify(capmt_t *capmt, uint8_t adapter,
       continue;
     if (adapter != ct->ct_adapter)
       continue;
+
+
+    tvhdebug(LS_CAPMT, "%s: process notify adapter=%d sid=%d caid=%04X(%s) pid=%04X provid=%06X ecmtime=%d hops=%d reader=%s from=%s protocol=%s",
+                      capmt_name(capmt), adapter, sid, caid, cardsystem, pid, provid, ecmtime, hops, reader, from, protocol);
 
     descrambler_notify((th_descrambler_t *)ct, caid, provid,
                        cardsystem, pid, ecmtime, hops, reader, from,
@@ -1276,17 +1291,21 @@ capmt_analyze_cmd(capmt_t *capmt, int adapter, sbuf_t *sb, int offset)
     int32_t parity = sbuf_peek_s32(sb, offset + 8);
     uint8_t *cw    = sbuf_peek    (sb, offset + 12);
 
-    tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR adapter %d par %d idx %d %02x%02x%02x%02x%02x%02x%02x%02x",
+    ca_info_t *cai;
+    cai = &capmt->capmt_adapters[adapter].ca_info[index];
+    int32_t algo = cai->algo;
+    tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR adapter %d par %d idx %d %02x%02x%02x%02x%02x%02x%02x%02x   xxxxxxxxxxxxxxxxxxxxxxx   algo %d ",
              capmt_name(capmt), adapter, parity, index,
-             cw[0], cw[1], cw[2], cw[3], cw[4], cw[5], cw[6], cw[7]);
+             cw[0], cw[1], cw[2], cw[3], cw[4], cw[5], cw[6], cw[7], algo);
+
     if (index < 0)   // skipping removal request
       return;
     if (adapter >= MAX_CA || index >= MAX_INDEX)
       return;
     if (parity == 0) {
-      capmt_process_key(capmt, adapter, index, DESCRAMBLER_DES, cw, empty, 1);
+      capmt_process_key(capmt, adapter, index, cai->algo, cw, empty, 1);
     } else if (parity == 1) {
-      capmt_process_key(capmt, adapter, index, DESCRAMBLER_DES, empty, cw, 1);
+      capmt_process_key(capmt, adapter, index, cai->algo, empty, cw, 1);
     } else
       tvherror(LS_CAPMT, "%s: Invalid parity %d in CA_SET_DESCR for adapter%d", capmt_name(capmt), parity, adapter);
 
@@ -1327,19 +1346,24 @@ capmt_analyze_cmd(capmt_t *capmt, int adapter, sbuf_t *sb, int offset)
       return;
 
     cai = &capmt->capmt_adapters[adapter].ca_info[index];
-    if (algo != cai->algo && cai->cipher_mode != cipher_mode) {
-      tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR_MODE adapter %d algo %d cipher mode %d",
-               capmt_name(capmt), adapter, algo, cipher_mode);
+//    if (algo != cai->algo && cai->cipher_mode != cipher_mode) {
+//    if (algo != cai->algo || cai->cipher_mode != cipher_mode) {
+      tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR_MODE adapter %d index %d algo %d cipher mode %d",
+               capmt_name(capmt), adapter, index, algo, cipher_mode);
       cai->algo        = algo;
       cai->cipher_mode = cipher_mode;
-    }
+//    }
 
   } else if (cmd == DMX_SET_FILTER) {
 
+  tvhdebug(LS_CAPMT, "%s, DMX_SET_FILTER  adapter %d ",
+                      capmt_name(capmt), adapter);
     capmt_set_filter(capmt, adapter, sb, offset);
 
   } else if (cmd == DMX_STOP) {
 
+  tvhdebug(LS_CAPMT, "%s, DMX_STOP  adapter %d ",
+                      capmt_name(capmt), adapter);
     capmt_stop_filter(capmt, adapter, sb, offset);
 
   } else if (cmd == DVBAPI_ECM_INFO) {
@@ -1639,7 +1663,7 @@ handle_ca0_wrapper(capmt_t *capmt)
 
       capmt_process_key(capmt, 0,
                         buffer[0] | ((uint16_t)buffer[1] << 8),
-                        DESCRAMBLER_DES,
+                        DESCRAMBLER_CSA,
                         buffer + 2, buffer + 10,
                         ret == 18);
     }
@@ -1917,7 +1941,12 @@ capmt_caid_change(th_descrambler_t *td)
   TAILQ_FOREACH(st, &t->s_filt_components, es_filt_link) {
     if (i < MAX_PIDS && SCT_ISAV(st->es_type)) {
       /* we use this first A/V PID in the PMT message */
-      if (i == 0 && ct->ct_pids[i] != st->es_pid) change = 1;
+      if(SCT_ISVIDEO(st->es_type)) {
+        if (ct->ct_vpid != st->es_pid) change = 1;
+        ct->ct_types[i] = 0x02;
+        ct->ct_vpid = st->es_pid;
+      }
+      if(SCT_ISAUDIO(st->es_type)) ct->ct_types[i] = 0x04;
       ct->ct_pids[i++] = st->es_pid;
     }
     if (t->s_dvb_prefcapid_lock == PREFCAPID_FORCE &&
@@ -1939,8 +1968,11 @@ capmt_caid_change(th_descrambler_t *td)
   }
 
   /* clear rest */
-  for (; i < MAX_PIDS; i++)
+  for (; i < MAX_PIDS; i++){
     ct->ct_pids[i] = 0;
+    ct->ct_types[i] = 0;
+  }
+  //ct->ct_vpid = 0;
 
   /* find removed ECM PIDs */
   LIST_FOREACH(cce, &ct->ct_caid_ecm, cce_link) {
@@ -2001,6 +2033,7 @@ capmt_send_request(capmt_service_t *ct, int lm)
   uint16_t onid = t->s_dvb_mux->mm_onid;
   static uint8_t pmtversion = 1;
   int adapter_num = ct->ct_adapter;
+  int i;
 
   /* buffer for capmt */
   int pos = 0;
@@ -2099,12 +2132,17 @@ capmt_send_request(capmt_service_t *ct, int lm)
       sid, adapter_num);
   }
 
-  uint8_t end[] = { 
-    0x01, (ct->ct_pids[0] >> 8) & 0xFF, ct->ct_pids[0] & 0xFF, 0x00, 0x06 };
-  memcpy(&buf[pos], end, sizeof(end));
-  pos += sizeof(end);
-  buf[10] = ((pos - 5 - 12) & 0xF00) >> 8;
-  buf[11] = ((pos - 5 - 12) & 0xFF);
+  buf[10] = ((pos - 5 - 7) & 0xF00) >> 8;
+  buf[11] = ((pos - 5 - 7) & 0xFF);
+
+  for ( i = 0; i < 32 ; i++ ) {
+    if (  ct->ct_types[i] ) {
+      uint8_t end[] = {
+        ct->ct_types[i]  & 0xFF, (ct->ct_pids[i] >> 8) & 0xFF, ct->ct_pids[i] & 0xFF, 0x00, 0x00 };
+      memcpy(&buf[pos], end, sizeof(end));
+      pos += sizeof(end);
+    }
+  }
   buf[4]  = ((pos - 6) >> 8);
   buf[5]  = ((pos - 6) & 0xFF);
 
@@ -2245,6 +2283,11 @@ capmt_service_start(caclient_t *cac, service_t *s)
   i = 0;
   TAILQ_FOREACH(st, &t->s_filt_components, es_filt_link) {
     if (i < MAX_PIDS && SCT_ISAV(st->es_type))
+      if(SCT_ISVIDEO(st->es_type)) {
+        ct->ct_types[i] = 0x02;
+        ct->ct_vpid = st->es_pid;
+      }
+      if(SCT_ISAUDIO(st->es_type)) ct->ct_types[i] = 0x04;
       ct->ct_pids[i++] = st->es_pid;
     if (t->s_dvb_prefcapid_lock == PREFCAPID_FORCE &&
         t->s_dvb_prefcapid != st->es_pid)
