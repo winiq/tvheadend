@@ -31,9 +31,10 @@ struct mpegts_table;
 struct mpegts_mux;
 struct th_descrambler_data;
 
-#define DESCRAMBLER_NONE 0
+#define DESCRAMBLER_CSA  0
 #define DESCRAMBLER_DES  1
 #define DESCRAMBLER_AES  2
+#define DESCRAMBLER_NONE 3
 
 /**
  * Descrambler superclass
@@ -83,8 +84,8 @@ typedef struct th_descrambler_runtime {
   TAILQ_HEAD(, th_descrambler_data) dr_queue;
   uint32_t dr_queue_total;
   tvhlog_limit_t dr_loglimit_key;
-  uint8_t  dr_key_even[16];
-  uint8_t  dr_key_odd[16];
+  uint8_t  dr_key_even[16][32];
+  uint8_t  dr_key_odd[16][32];
 } th_descrambler_runtime_t;
 
 typedef void (*descrambler_section_callback_t)
@@ -158,6 +159,7 @@ void descrambler_caid_changed  ( struct service *t );
 int  descrambler_resolved      ( struct service *t, th_descrambler_t *ignore );
 void descrambler_external      ( struct service *t, int state );
 void descrambler_keys          ( th_descrambler_t *t, int type,
+                                 int index, uint16_t pid, int is_vpid,
                                  const uint8_t *even, const uint8_t *odd );
 void descrambler_notify        ( th_descrambler_t *t,
                                  uint16_t caid, uint32_t provid,

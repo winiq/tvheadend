@@ -28,6 +28,7 @@ struct elementary_stream;
 #include <dvbcsa/dvbcsa.h>
 #else
 #include "ffdecsa/FFdecsa.h"
+#include "cscrypt/des.h"
 #endif
 
 #include "libaesdec/libaesdec.h"
@@ -59,18 +60,21 @@ typedef struct tvhcsa
   struct dvbcsa_bs_key_s *csa_key_even;
   struct dvbcsa_bs_key_s *csa_key_odd;
 #else
-  void *csa_keys;
+  void *csa_keys[32];
 #endif
   void *csa_aes_keys;
-  
+  uint32_t	csa_des_keys[33][2][32]; // [0 - video 1-x audio/subtitle]  [0/1 even/odd] [32 byte keys]
+  int	use_extended_cw;
+  uint16_t csa_pids[32];
+  int csa_vpid_index;
 } tvhcsa_t;
 
 #if ENABLE_TVHCSA
 
 int  tvhcsa_set_type( tvhcsa_t *csa, int type );
 
-void tvhcsa_set_key_even( tvhcsa_t *csa, const uint8_t *even );
-void tvhcsa_set_key_odd ( tvhcsa_t *csa, const uint8_t *odd );
+void tvhcsa_set_key_even( tvhcsa_t *csa, int index, const uint8_t *even );
+void tvhcsa_set_key_odd ( tvhcsa_t *csa, int index, const uint8_t *odd );
 
 void tvhcsa_init    ( tvhcsa_t *csa );
 void tvhcsa_destroy ( tvhcsa_t *csa );
