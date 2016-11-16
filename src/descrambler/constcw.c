@@ -152,7 +152,8 @@ constcw_service_start(caclient_t *cac, service_t *t)
   LIST_INSERT_HEAD(&ccw->ccw_services, ct, cs_link);
 
   descrambler_keys(td, constcw_key_size(cac) == 8 ?
-                   DESCRAMBLER_DES : DESCRAMBLER_AES,
+                   DESCRAMBLER_CSA : DESCRAMBLER_AES,
+                   0, 0, 0,
                    ccw->ccw_key_even, ccw->ccw_key_odd);
 }
 
