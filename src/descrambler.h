@@ -84,8 +84,8 @@ typedef struct th_descrambler_runtime {
   TAILQ_HEAD(, th_descrambler_data) dr_queue;
   uint32_t dr_queue_total;
   tvhlog_limit_t dr_loglimit_key;
-  uint8_t  dr_key_even[16][32];
-  uint8_t  dr_key_odd[16][32];
+  uint8_t  dr_key_even[MAX_KEYS][32];
+  uint8_t  dr_key_odd[MAX_KEYS][32];
 } th_descrambler_runtime_t;
 
 typedef void (*descrambler_section_callback_t)
