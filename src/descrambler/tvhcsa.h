@@ -28,10 +28,12 @@ struct elementary_stream;
 #include <dvbcsa/dvbcsa.h>
 #else
 #include "ffdecsa/FFdecsa.h"
-#include "cscrypt/des.h"
 #endif
+#include "cscrypt/des.h"
 
 #include "libaesdec/libaesdec.h"
+
+#define MAX_KEYS 64
 
 typedef struct tvhcsa
 {
@@ -60,12 +62,12 @@ typedef struct tvhcsa
   struct dvbcsa_bs_key_s *csa_key_even;
   struct dvbcsa_bs_key_s *csa_key_odd;
 #else
-  void *csa_keys[32];
+  void *csa_keys[MAX_KEYS];
 #endif
   void *csa_aes_keys;
-  uint32_t	csa_des_keys[33][2][32]; // [0 - video 1-x audio/subtitle]  [0/1 even/odd] [32 byte keys]
+  uint32_t	csa_des_keys[MAX_KEYS][2][32]; // [0 - video 1-x audio/subtitle]  [0/1 even/odd] [32 byte keys]
   int	use_extended_cw;
-  uint16_t csa_pids[32];
+  uint16_t csa_pids[MAX_KEYS];
   int csa_vpid_index;
 } tvhcsa_t;
 

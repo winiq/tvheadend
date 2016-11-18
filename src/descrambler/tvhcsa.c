@@ -98,19 +98,19 @@ tvhcsa_csa_flush_extended_cw
   uint16_t pid, pid2;
   uint8_t scramblingControl, oddeven;
   uint8_t *packetClusterV[256];
-  uint8_t *packetClusterA[32][64];  //separate cluster arrays for video and each audio track
+  uint8_t *packetClusterA[MAX_KEYS][64];  //separate cluster arrays for video and each audio track
   void *csakeyV = 0;
   void *csakeyA = {0};
   uint32_t scrambled_packets = 0;
-  uint32_t scrambled_packetsA[32]  = {0};
-  uint32_t cs =0;  //video cluster start
-  uint32_t ce =1;  //video cluster end
-  uint32_t cs_a[32] = {0};  //cluster index for audio tracks
+  uint32_t scrambled_packetsA[MAX_KEYS] = {0};
+  uint32_t cs = 0;  //video cluster start
+  uint32_t ce = 1;  //video cluster end
+  uint32_t cs_a[MAX_KEYS] = {0};  //cluster index for audio tracks
 
   packetClusterV[0] = NULL;
   j = 0;
 
-  for (i = 0  ; i < csa->csa_fill*188 ; i+=188) {
+  for (i = 0; i < csa->csa_fill * 188; i += 188) {
 
     tsheader = ((csa->csa_tsbcluster[i] <<24) | (csa->csa_tsbcluster[i+1] <<16)| (csa->csa_tsbcluster[i+2] <<8) | csa->csa_tsbcluster[i+3]) & 0xffffffff;
     pid = (tsheader & 0x1fff00) >> 8;
@@ -121,13 +121,13 @@ tvhcsa_csa_flush_extended_cw
 
       if ( pid == csa->csa_pids[csa->csa_vpid_index] ) {
         csakeyV = csa->csa_keys[csa->csa_vpid_index];
-        cs=0;
-        ce=1;
+        cs = 0;
+        ce = 1;
         packetClusterV[cs] = csa->csa_tsbcluster +i;  // set first cluster start;
         packetClusterV[ce] = csa->csa_tsbcluster +i + 188 -1;  // set first cluster start;
-        scrambled_packets=1;
+        scrambled_packets = 1;
 
-        for ( j = i + 188; j  < csa->csa_fill*188 ; j+=188) {
+        for (j = i + 188; j  < csa->csa_fill * 188; j += 188) {
           tsheader2 = ((csa->csa_tsbcluster[j] <<24) | (csa->csa_tsbcluster[j+1] <<16)| (csa->csa_tsbcluster[j+2] <<8) | csa->csa_tsbcluster[j+3]) & 0xffffffff;
           pid2 = (tsheader2 & 0x1fff00) >> 8;
           scramblingControl = tsheader2 & 0xc0;
@@ -152,7 +152,7 @@ tvhcsa_csa_flush_extended_cw
             if (scramblingControl == 0) continue;
             if (scramblingControl != oddeven) break;
 
-            for (k = 0; k < 32; k++) {
+            for (k = 0; k < MAX_KEYS; k++) {
 // tvhdebug(LS_CSA, " pid =  %04x  %d   pid2 =  %04x  %d    k = %d pidk = %04x %d", pid,pid,pid2,pid2,k,csa->csa_pids[k],csa->csa_pids[k]);
               if (k  == csa->csa_vpid_index)
                 continue;
@@ -183,7 +183,7 @@ tvhcsa_csa_flush_extended_cw
        tvhdebug(LS_CSA, " decrypt r    i = %d  j = %d  r = %d  k = %d  ",i,j,r,k);
         }
 
-        for(k = 0; k < 32; k++) {
+        for(k = 0; k < MAX_KEYS; k++) {
           if (k  == csa->csa_vpid_index)
             continue;
           if(scrambled_packetsA[k]) {  // if audio track has scrambled packets, set null to mark end and decrypt
@@ -191,12 +191,12 @@ tvhcsa_csa_flush_extended_cw
             csakeyA = csa->csa_keys[k];
             r = decrypt_packets(csakeyA, packetClusterA[k]);
        tvhdebug(LS_CSA, " decrypt audio r    i = %d  j = %d  r = %d  k = %d  ",i,j,r,k);
-            cs_a[k]=0;
+            cs_a[k] = 0;
             scrambled_packetsA[k] = 0;
           }
         }
       } else { // packet not video - decrypt single audio packet and continue
-        for(k = 0; k < 32; k++) {
+        for(k = 0; k < MAX_KEYS; k++) {
           if (k  == csa->csa_vpid_index)
             continue;
           if(pid == csa->csa_pids[k]) {
@@ -210,8 +210,8 @@ tvhcsa_csa_flush_extended_cw
           decrypt_packets(csakeyA, packetClusterA[0]);
         }
       }
-      if (  j  > csa->csa_fill*188 ) {
-       tvhdebug(LS_CSA, " FULL JJJJJJJJJJJJJJ    i = %d  j = %d  r = %d  k = %d  ",i,j,j-i,k);
+      if (  j  > csa->csa_fill * 188 ) {
+       tvhdebug(LS_CSA, " FULL CSA_FILL !!!!!    i = %d  j = %d  r = %d  k = %d  ",i,j,j-i,k);
         break;
       //} else {
       //  i = j - 188;
@@ -323,7 +323,7 @@ tvhcsa_des_flush
   uint8_t scramblingControl, oddeven;
   uint8_t *pdata;
 
-  for (i = 0  ; i <= csa->csa_fill*188 ; i+=188) {
+  for (i = 0; i <= csa->csa_fill * 188; i += 188) {
 
     tsheader = ((csa->csa_tsbcluster[i] <<24) | (csa->csa_tsbcluster[i+1] <<16)| (csa->csa_tsbcluster[i+2] <<8) | csa->csa_tsbcluster[i+3]) & 0xffffffff;
     pid = (tsheader & 0x1fff00) >> 8;
@@ -343,7 +343,7 @@ tvhcsa_des_flush
       {offset = 4; }
      // offset = 4;
 
-    for (j = 0; j <16; j++) {
+    for (j = 0; j < MAX_KEYS; j++) {
       if ( pid == csa->csa_pids[j] ) {
 
 /*    tvhlog(LOG_DEBUG, "tvhcsa", "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
@@ -352,7 +352,7 @@ tvhcsa_des_flush
              csa->csa_tsbcluster[i+10],csa->csa_tsbcluster[i+11],csa->csa_tsbcluster[i+12],csa->csa_tsbcluster[i+13],csa->csa_tsbcluster[i+14],
              csa->csa_tsbcluster[i+15]);
 */
-        for(k=offset; k+7<188; k+=8) {
+        for(k = offset; k + 7 < 188; k += 8) {
 
 	  pdata = csa->csa_tsbcluster +i +k;
           //des2(&csa->csa_tsbcluster[i], csa->csa_des_keys[j][oddeven],0);
@@ -502,7 +502,7 @@ tvhcsa_init ( tvhcsa_t *csa )
   csa->csa_key_even      = dvbcsa_bs_key_alloc();
   csa->csa_key_odd       = dvbcsa_bs_key_alloc();
 #else
-  for ( i = 0; i < 32; i++ ){
+  for (i = 0; i < MAX_KEYS; i++){
     csa->csa_keys[i]          = get_key_struct();
   }
 #endif
@@ -519,7 +519,7 @@ tvhcsa_destroy ( tvhcsa_t *csa )
   free(csa->csa_tsbbatch_even);
 #else
   int i;
-  for ( i = 0; i < 32; i++ ){
+  for (i = 0; i < MAX_KEYS; i++){
     free_key_struct(csa->csa_keys[i]);
   }
 #endif

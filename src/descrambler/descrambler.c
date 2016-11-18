@@ -727,7 +727,7 @@ descrambler_descramble ( service_t *t,
       dr->dr_csa.csa_flush(&dr->dr_csa, (mpegts_service_t *)t);
 
       if ( dr->dr_csa.use_extended_cw == 1 ) {
-          for ( i = 0 ; i < 32 ; i++ ) {
+          for (i = 0; i < MAX_KEYS; i++) {
           if (dr->dr_key_changed & 1)
             tvhcsa_set_key_even(&dr->dr_csa, i, dr->dr_key_even[i]);
           if (dr->dr_key_changed & 2)

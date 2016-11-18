@@ -1216,7 +1216,7 @@ capmt_msg_size(capmt_t *capmt, sbuf_t *sb, int offset)
       return 0;
     int len = 4 + adapter_byte + 2 + 2 + 2 + 4 + 4;
     int i;
-    for (i=0; i<4; i++) {
+    for (i = 0; i < 4; i++) {
       if (len >= sb->sb_ptr)
         return 0;
       len += sbuf_peek_u8(sb, len) + 1;
