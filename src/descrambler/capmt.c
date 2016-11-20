@@ -381,6 +381,7 @@ capmt_pid_add(capmt_t *capmt, int adapter, int pid, mpegts_service_t *s)
     if (t->pid == PID_UNUSED)
       o = t;
   }
+  if ( pid == 0 ) return;
   if (o) {
     o->capmt    = capmt;
     o->adapter  = adapter;
