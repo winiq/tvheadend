@@ -93,6 +93,8 @@ static void
 tvhcsa_csa_flush_extended_cw
   ( tvhcsa_t *csa, struct mpegts_service *s )
 {
+#if ENABLE_DVBCSA
+#else
   int r, i, j, k;
   uint32_t tsheader, tsheader2;
   uint16_t pid, pid2;
@@ -221,6 +223,7 @@ tvhcsa_csa_flush_extended_cw
 
   ts_recv_packet2(s, csa->csa_tsbcluster,  csa->csa_fill * 188);
 
+#endif
   csa->csa_fill = 0;
 
 }
