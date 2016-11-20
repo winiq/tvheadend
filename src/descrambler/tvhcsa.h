@@ -50,6 +50,7 @@ typedef struct tvhcsa
               ( struct tvhcsa *csa, struct mpegts_service *s );
 
   int      csa_cluster_size;
+  int      csa_cluster_parallelism;
   uint8_t *csa_tsbcluster;
   int      csa_fill;
 

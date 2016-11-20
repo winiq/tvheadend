@@ -176,11 +176,10 @@ tvhcsa_csa_flush_extended_cw
           packetClusterV[ce+1] = NULL;  // add null to end of cluster list
         }
 
-	r = csa->csa_cluster_size >>1;
-        //while( r >= csa->csa_cluster_size >>1) {
-        while( r >= 128) {
+	r = csa->csa_cluster_parallelism;
+        while( r >= csa->csa_cluster_parallelism) {
           r = decrypt_packets(csakeyV, packetClusterV);
-       tvhdebug(LS_CSA, " decrypt r    i = %d  j = %d  r = %d  k = %d  ",i,j,r,k);
+          tvhdebug(LS_CSA, " decrypt r    i = %d  j = %d  r = %d  k = %d  ",i,j,r,k);
         }
 
         for(k = 0; k < MAX_KEYS; k++) {
@@ -210,15 +209,14 @@ tvhcsa_csa_flush_extended_cw
           decrypt_packets(csakeyA, packetClusterA[0]);
         }
       }
-      if (  j  > csa->csa_fill * 188 ) {
+      if (  j  >= csa->csa_fill * 188 ) {
        tvhdebug(LS_CSA, " FULL CSA_FILL !!!!!    i = %d  j = %d  r = %d  k = %d  ",i,j,j-i,k);
         break;
-      //} else {
-      //  i = j - 188;
-
+      } else if ( j > 0 ) {
+        i = j - 188;
       }
-    //}
-       tvhdebug(LS_CSA, "  i = %d  j = %d  r = %d  k = %d  ",i,j,j-i,k);
+
+      tvhdebug(LS_CSA, "  i = %d  j = %d  r = %d  k = %d  ",i,j,j-i,k);
   }
 
   ts_recv_packet2(s, csa->csa_tsbcluster,  csa->csa_fill * 188);
@@ -355,7 +353,6 @@ tvhcsa_des_flush
         for(k = offset; k + 7 < 188; k += 8) {
 
 	  pdata = csa->csa_tsbcluster +i +k;
-          //des2(&csa->csa_tsbcluster[i], csa->csa_des_keys[j][oddeven],0);
           des2(pdata, csa->csa_des_keys[j][oddeven],0);
         }
 
@@ -481,14 +478,13 @@ void tvhcsa_set_key_odd( tvhcsa_t *csa, int index, const uint8_t *odd )
 void
 tvhcsa_init ( tvhcsa_t *csa )
 {
-  int i;
   csa->csa_type          = DESCRAMBLER_NONE;
   csa->csa_keylen        = 0;
 #if ENABLE_DVBCSA
   csa->csa_cluster_size  = dvbcsa_bs_batch_size();
 #else
   csa->csa_cluster_size  = get_suggested_cluster_size();
-  csa->csa_cluster_size  <<= 1;
+  csa->csa_cluster_parallelism      = get_internal_parallelism();
 #endif
   /* Note: the optimized routines might read memory after last TS packet */
   /*       allocate safe memory and fill it with zeros */
@@ -502,6 +498,7 @@ tvhcsa_init ( tvhcsa_t *csa )
   csa->csa_key_even      = dvbcsa_bs_key_alloc();
   csa->csa_key_odd       = dvbcsa_bs_key_alloc();
 #else
+  int i;
   for (i = 0; i < MAX_KEYS; i++){
     csa->csa_keys[i]          = get_key_struct();
   }
