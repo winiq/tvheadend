@@ -94,6 +94,22 @@ tvhcsa_csa_flush_extended_cw
   ( tvhcsa_t *csa, struct mpegts_service *s )
 {
 #if ENABLE_DVBCSA
+
+  if(csa->csa_fill_even) {
+    csa->csa_tsbbatch_even[csa->csa_fill_even].data = NULL;
+    //dvbcsa_bs_decrypt(csa->csa_key_even, csa->csa_tsbbatch_even, 184);
+    csa->csa_fill_even = 0;
+  }
+  if(csa->csa_fill_odd) {
+    csa->csa_tsbbatch_odd[csa->csa_fill_odd].data = NULL;
+    //dvbcsa_bs_decrypt(csa->csa_key_odd, csa->csa_tsbbatch_odd, 184);
+    csa->csa_fill_odd = 0;
+  }
+
+  ts_recv_packet2(s, csa->csa_tsbcluster, csa->csa_fill * 188);
+
+  csa->csa_fill = 0;
+
 #else
   int r, i, j, k;
   uint32_t tsheader, tsheader2;
@@ -287,9 +303,14 @@ tvhcsa_csa_descramble
      }
    } while(0);
 
-   if(csa->csa_fill == csa->csa_cluster_size)
-     tvhcsa_csa_flush(csa, s);
-
+   if(csa->csa_fill == csa->csa_cluster_size) {
+      if ( csa->use_extended_cw ) {
+        tvhcsa_csa_flush_extended_cw(csa, s);
+      }
+      else {
+        tvhcsa_csa_flush(csa, s);
+      }
+    }
   }
 
 #else
@@ -409,7 +430,7 @@ tvhcsa_set_type( tvhcsa_t *csa, int type )
     if (csa->use_extended_cw) {
       csa->csa_flush      = tvhcsa_csa_flush_extended_cw;
     } else {
-    csa->csa_flush      = tvhcsa_csa_flush;
+      csa->csa_flush      = tvhcsa_csa_flush;
     }
     csa->csa_keylen     = 8;
     break;
