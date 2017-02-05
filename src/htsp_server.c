@@ -521,6 +521,10 @@ htsp_generate_challenge(htsp_connection_t *htsp)
 static inline int
 htsp_user_access_channel(htsp_connection_t *htsp, channel_t *ch)
 {
+  if (!ch || !ch->ch_enabled || LIST_FIRST(&ch->ch_services) == NULL) /* Don't pass unplayable channels to clients */
+    return 0;
+  if (!htsp)
+    return 1;
   return channel_access(ch, htsp->htsp_granted_access, 0);
 }
 
@@ -1311,7 +1315,8 @@ htsp_method_authenticate(htsp_connection_t *htsp, htsmsg_t *in)
     htsmsg_add_u32(r, "limitstreaming", htsp->htsp_granted_access->aa_conn_limit_streaming);
     htsmsg_add_u32(r, "uilevel",        htsp->htsp_granted_access->aa_uilevel == UILEVEL_DEFAULT ?
         config.uilevel : htsp->htsp_granted_access->aa_uilevel);
-    htsmsg_add_str(r, "uilanguage",     htsp->htsp_granted_access->aa_lang_ui);
+    htsmsg_add_str(r, "uilanguage",     htsp->htsp_granted_access->aa_lang_ui ?
+        htsp->htsp_granted_access->aa_lang_ui : (config.language_ui ? config.language_ui : ""));
   }
   
   return r;
@@ -3480,7 +3485,7 @@ htsp_channel_add(channel_t *ch)
 void
 htsp_channel_update(channel_t *ch)
 {
-  if (ch->ch_enabled)
+  if (htsp_user_access_channel(NULL, ch))
     _htsp_channel_update(ch, "channelUpdate", NULL);
   else // in case the channel was ever sent to the client
     htsp_channel_delete(ch);
