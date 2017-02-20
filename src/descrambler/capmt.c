@@ -142,6 +142,7 @@ LIST_HEAD(capmt_caid_ecm_list, capmt_caid_ecm);
  */
 typedef struct ca_info {
   uint16_t pids[MAX_PIDS];	// elementary stream pids (was: sequence / service id number)
+  uint8_t mode_set;
   enum {
     CA_ALGO_DVBCSA,
     CA_ALGO_DES,
@@ -1294,11 +1295,14 @@ capmt_analyze_cmd(capmt_t *capmt, int adapter, sbuf_t *sb, int offset)
 
     ca_info_t *cai;
     cai = &capmt->capmt_adapters[adapter].ca_info[index];
-    int32_t algo = cai->algo;
     tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR adapter %d par %d idx %d %02x%02x%02x%02x%02x%02x%02x%02x   xxxxxxxxxxxxxxxxxxxxxxx   algo %d ",
              capmt_name(capmt), adapter, parity, index,
-             cw[0], cw[1], cw[2], cw[3], cw[4], cw[5], cw[6], cw[7], algo);
+             cw[0], cw[1], cw[2], cw[3], cw[4], cw[5], cw[6], cw[7], cai->algo);
 
+    if (cai->mode_set == 0) {  // Received keys, but don't know mode yet...
+      tvhwarn(LS_CAPMT, "%s: CA_SET_DESCR received before CA_SET_DESCR_MODE",capmt_name(capmt));
+      return;
+    }
     if (index < 0)   // skipping removal request
       return;
     if (adapter >= MAX_CA || index >= MAX_INDEX)
@@ -1347,13 +1351,17 @@ capmt_analyze_cmd(capmt_t *capmt, int adapter, sbuf_t *sb, int offset)
       return;
 
     cai = &capmt->capmt_adapters[adapter].ca_info[index];
-//    if (algo != cai->algo && cai->cipher_mode != cipher_mode) {
-//    if (algo != cai->algo || cai->cipher_mode != cipher_mode) {
-      tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR_MODE adapter %d index %d algo %d cipher mode %d",
+
+    tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR_MODE adapter %d index %d algo %d cipher mode %d",
+             capmt_name(capmt), adapter, index, algo, cipher_mode);
+
+    if (algo != cai->algo || cai->cipher_mode != cipher_mode || cai->mode_set == 0) {
+      tvhdebug(LS_CAPMT, "%s, CA_SET_DESCR_MODE adapter %d index %d algo %d cipher mode %d  --- MODE SET/CHANGED!",
                capmt_name(capmt), adapter, index, algo, cipher_mode);
       cai->algo        = algo;
       cai->cipher_mode = cipher_mode;
-//    }
+      cai->mode_set    = 1;
+    }
 
   } else if (cmd == DMX_SET_FILTER) {
 
@@ -2283,13 +2291,14 @@ capmt_service_start(caclient_t *cac, service_t *s)
 
   i = 0;
   TAILQ_FOREACH(st, &t->s_filt_components, es_filt_link) {
-    if (i < MAX_PIDS && SCT_ISAV(st->es_type))
+    if (i < MAX_PIDS && SCT_ISAV(st->es_type)) {
       if(SCT_ISVIDEO(st->es_type)) {
         ct->ct_types[i] = 0x02;
         ct->ct_vpid = st->es_pid;
       }
       if(SCT_ISAUDIO(st->es_type)) ct->ct_types[i] = 0x04;
       ct->ct_pids[i++] = st->es_pid;
+    }
     if (t->s_dvb_prefcapid_lock == PREFCAPID_FORCE &&
         t->s_dvb_prefcapid != st->es_pid)
       continue;

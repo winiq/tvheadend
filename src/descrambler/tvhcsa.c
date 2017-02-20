@@ -421,8 +421,8 @@ tvhcsa_set_type( tvhcsa_t *csa, int type )
 {
   if (csa->csa_type == type)
     return 0;
-  if (csa->csa_descramble)
-    return -1;
+//  if (csa->csa_descramble)
+//    return -1;
   switch (type) {
   case DESCRAMBLER_CSA:
    tvhtrace(LS_CSA, " Encryption CSA used !!! ");
