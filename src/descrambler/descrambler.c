@@ -260,7 +260,7 @@ descrambler_service_start ( service_t *t )
         count++;
         if ( ca->caid == 0xe00)
            use_extended_cw = 1;
-        tvhdebug(LS_DESCRAMBLER, "CAID in list = '%4X' extended_cw = %d", ca->caid, use_extended_cw);
+        tvhdebug(LS_DESCRAMBLER, "CAID in list = '%04X' extended_cw = %d", ca->caid, use_extended_cw);
       }
 
     /* Do not run descrambler on FTA channels */

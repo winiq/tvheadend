@@ -1301,6 +1301,7 @@ capmt_analyze_cmd(capmt_t *capmt, int adapter, sbuf_t *sb, int offset)
 
     if (cai->mode_set == 0) {  // Received keys, but don't know mode yet...
       tvhwarn(LS_CAPMT, "%s: CA_SET_DESCR received before CA_SET_DESCR_MODE",capmt_name(capmt));
+      cai->mode_set    = 1; // If not being set, assume regular CSA
       return;
     }
     if (index < 0)   // skipping removal request
