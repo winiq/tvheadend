@@ -338,82 +338,67 @@ static void
 tvhcsa_des_flush
   ( tvhcsa_t *csa, struct mpegts_service *s )
 {
-
-  int i, j, k;
-  uint32_t tsheader;
-  uint16_t pid, offset;
-  uint8_t scramblingControl, oddeven;
-  uint8_t *pdata;
-
-  for (i = 0; i <= csa->csa_fill * 188; i += 188) {
-
-    tsheader = ((csa->csa_tsbcluster[i] <<24) | (csa->csa_tsbcluster[i+1] <<16)| (csa->csa_tsbcluster[i+2] <<8) | csa->csa_tsbcluster[i+3]) & 0xffffffff;
-    pid = (tsheader & 0x1fff00) >> 8;
-    scramblingControl = tsheader & 0xc0;
-
-    if (scramblingControl == 0) continue;
-
-    if (scramblingControl == 0x80) {
-      oddeven = 0;
-    } else {
-      oddeven = 1;
-    }
-
-    if(tsheader & 0x20)
-      { offset = 4 + csa->csa_tsbcluster[i+4] + 1; }
-    else
-      {offset = 4; }
-     // offset = 4;
-
-    for (j = 0; j < MAX_KEYS; j++) {
-      if ( pid == csa->csa_pids[j] ) {
-
-/*    tvhlog(LOG_DEBUG, "tvhcsa", "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-             csa->csa_tsbcluster[i+0],csa->csa_tsbcluster[i+1],csa->csa_tsbcluster[i+2],csa->csa_tsbcluster[i+3],csa->csa_tsbcluster[i+4],
-             csa->csa_tsbcluster[i+5],csa->csa_tsbcluster[i+6],csa->csa_tsbcluster[i+7],csa->csa_tsbcluster[i+8],csa->csa_tsbcluster[i+9],
-             csa->csa_tsbcluster[i+10],csa->csa_tsbcluster[i+11],csa->csa_tsbcluster[i+12],csa->csa_tsbcluster[i+13],csa->csa_tsbcluster[i+14],
-             csa->csa_tsbcluster[i+15]);
-*/
-        for(k = offset; k + 7 < 188; k += 8) {
-
-	  pdata = csa->csa_tsbcluster +i +k;
-          des2(pdata, csa->csa_des_keys[j][oddeven],0);
-        }
-
-        csa->csa_tsbcluster[i+3] &= 0x3F;
-/*
-    tvhlog(LOG_DEBUG, "tvhcsa", "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x after",
-             csa->csa_tsbcluster[i+0],csa->csa_tsbcluster[i+1],csa->csa_tsbcluster[i+2],csa->csa_tsbcluster[i+3],csa->csa_tsbcluster[i+4],
-             csa->csa_tsbcluster[i+5],csa->csa_tsbcluster[i+6],csa->csa_tsbcluster[i+7],csa->csa_tsbcluster[i+8],csa->csa_tsbcluster[i+9],
-             csa->csa_tsbcluster[i+10],csa->csa_tsbcluster[i+11],csa->csa_tsbcluster[i+12],csa->csa_tsbcluster[i+13],csa->csa_tsbcluster[i+14],
-             csa->csa_tsbcluster[i+15]);
-*/
-        break;
-      }
-    }
-  }
-
-    ts_recv_packet2(s, csa->csa_tsbcluster,  csa->csa_fill * 188);
-
-    csa->csa_fill = 0;
-
+  /* empty - no queue */
 }
 
 static void
 tvhcsa_des_descramble
   ( tvhcsa_t *csa, struct mpegts_service *s, const uint8_t *tsb, int tsb_len )
 {
-  const uint8_t *tsb_end = tsb + tsb_len;
 
-  for ( ; tsb < tsb_end; tsb += 188 ) {
+  const uint8_t *tsb2, *end2;
 
-    memcpy(csa->csa_tsbcluster + csa->csa_fill * 188, tsb, 188);
-    csa->csa_fill++;
+  int j, k;
+  uint32_t tsheader;
+  uint16_t pid, offset;
+  uint8_t scramblingControl, oddeven;
+  uint8_t *pdata;
 
-    if(csa->csa_fill == csa->csa_cluster_size)
-        tvhcsa_des_flush(csa, s);
-  }
+ // tvhdebug(LS_CSA, " tsb_len =  %d len/188 = %d", tsb_len, tsb_len/188);  
 
+  tsheader = ( (*tsb) <<24 | *(tsb+1) <<16| *(tsb+2) <<8 | *(tsb+3)) & 0xffffffff;
+  pid = (tsheader & 0x1fff00) >> 8;
+  scramblingControl = tsheader & 0xc0;
+  //    tvhwarn(LS_CSA, "pid 0x%4X scramb = 0x%X", pid, scramblingControl);  
+
+  if (scramblingControl) { 
+
+    if (scramblingControl == 0x80) {
+      oddeven = 0;
+    } else {
+      oddeven = 1;
+    }
+//      tvhwarn(LS_CSA, "pid 0x%4X scramb = 0x%X  oddeven = %d ", pid, scramblingControl,oddeven);  
+
+    for (j = 0; j < MAX_KEYS; j++) {
+      if ( pid == csa->csa_pids[j] ) {
+
+        for (tsb2 = tsb, end2 = tsb + tsb_len; tsb2 < end2; tsb2 += 188) {
+
+//  tsheader = ( (*tsb2) <<24 | *(tsb2+1) <<16| *(tsb2+2) <<8 | *(tsb2+3)) & 0xffffffff;
+//    if(tsheader & 0x20)
+    if(*(tsb2+3) & 0x20)
+      { offset = 4 + *(tsb2+4) + 1; //}
+      }//tvhwarn(LS_CSA, "pid 0x%04X scramb = 0x%0X tsheader = 0x%08X  offset = %d 5 = 0x%X (%d)", pid, scramblingControl,tsheader,offset,*(tsb2+4),*(tsb2+4));  }
+    else
+      offset = 4; 
+          for(k = offset; k + 7 < 188; k += 8) {
+
+   	    pdata = (uint8_t *)(tsb2 +k);
+            des2(pdata, csa->csa_des_keys[j][oddeven],0);
+          }  
+
+        *(uint8_t *)(tsb2+3) &= 0x3F;
+        }
+      break;
+      }
+    }
+    if (j == MAX_KEYS )
+      tvhwarn(LS_CSA, "No key for pid 0x%4X", pid);  
+
+ }
+
+  ts_recv_packet2(s, tsb, tsb_len);
 }
 
 int
@@ -510,6 +495,7 @@ tvhcsa_init ( tvhcsa_t *csa )
   csa->csa_cluster_size  = get_suggested_cluster_size();
   csa->csa_cluster_parallelism      = get_internal_parallelism();
 #endif
+  tvhdebug(LS_CSA, " csa_cluster_size =  %d ", csa->csa_cluster_size);
   /* Note: the optimized routines might read memory after last TS packet */
   /*       allocate safe memory and fill it with zeros */
   csa->csa_tsbcluster    = malloc((csa->csa_cluster_size + 1) * 188);

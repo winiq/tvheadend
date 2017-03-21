@@ -1892,8 +1892,10 @@ capmt_table_input(void *opaque, int pid, const uint8_t *data, int len, int emm)
         f = &cf->dmx[filter_index].filter;
         if (f->mode[0] != 0)
           continue;
-        if ((data[0] & f->mask[0]) != f->filter[0])
+        if ((data[0] & f->mask[0]) != f->filter[0]) {
+          tvhtrace(LS_CAPMT, "****************** filter unmatched pid %d len %d data[0] 0x%2X", pid, len, data[0]);
           continue;
+        }
         /* note that the data offset changes here (+2) !!! */
         for (i = 1; i < DMX_FILTER_SIZE && i + 2 < len; i++) {
           if (f->mode[i] != 0)
