@@ -41,6 +41,8 @@
 #include "notify.h"
 #include "access.h"
 #include "dvr/dvr.h"
+#define COMPAT_IPTOS
+#include "compat.h"
 
 #if ENABLE_LIBSYSTEMD_DAEMON
 #include <systemd/sd-daemon.h>
