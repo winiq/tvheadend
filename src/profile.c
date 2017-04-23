@@ -98,6 +98,7 @@ profile_create
   LIST_INIT(&pro->pro_dvr_configs);
   LIST_INIT(&pro->pro_accesses);
   pro->pro_contaccess = 1;
+  pro->pro_ca_timeout = 2000;
   if (idnode_insert(&pro->pro_id, uuid, pb->clazz, 0)) {
     if (uuid)
       tvherror(LS_PROFILE, "invalid uuid '%s'", uuid);
@@ -391,6 +392,29 @@ const idclass_t profile_class =
                      "can't be decrypted by a CA client that normally "
                      "should be able to decrypt the stream."),
       .off      = offsetof(profile_t, pro_contaccess),
+      .opts     = PO_EXPERT,
+      .def.i    = 1,
+      .group    = 1
+    },
+    {
+      .type     = PT_INT,
+      .id       = "catimeout",
+      .name     = N_("Descrambling timeout (ms)"),
+      .desc     = N_("Check the descrambling status after this timeout."),
+      .off      = offsetof(profile_t, pro_ca_timeout),
+      .opts     = PO_EXPERT,
+      .def.i    = 2000,
+      .group    = 1
+    },
+    {
+      .type     = PT_BOOL,
+      .id       = "swservice",
+      .name     = N_("Switch to another service"),
+      .desc     = N_("If something fails, try to switch to a different "
+                     "service on another network. Do not try to iterate "
+                     "through all inputs/tuners which are capable to "
+                     "receive the service."),
+      .off      = offsetof(profile_t, pro_swservice),
       .opts     = PO_EXPERT,
       .def.i    = 1,
       .group    = 1
