@@ -389,9 +389,11 @@ http_send_header(http_connection_t *hc, int rc, const char *content,
     }
   }
   if (hc->hc_logout_cookie == 1) {
-    htsbuf_append_str(&hdrs, "Set-Cookie: logout=1; Path=\"/logout\"\r\n");
+    htsbuf_qprintf(&hdrs, "Set-Cookie: logout=1; Path=\"%s/logout\"\r\n",
+                   tvheadend_webroot ? tvheadend_webroot : "");
   } else if (hc->hc_logout_cookie == 2) {
-    htsbuf_append_str(&hdrs, "Set-Cookie: logout=0; Path=\"/logout'\"; expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n");
+    htsbuf_qprintf(&hdrs, "Set-Cookie: logout=0; Path=\"%s/logout'\"; expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n",
+                   tvheadend_webroot ? tvheadend_webroot : "");
   }
 
   if (hc->hc_version != RTSP_VERSION_1_0)
@@ -580,7 +582,7 @@ http_error(http_connection_t *hc, int error)
                    error, errtxt, error, errtxt);
 
     if (error == HTTP_STATUS_UNAUTHORIZED)
-      htsbuf_qprintf(&hc->hc_reply, "<P><A HREF=\"%s/\">Default Login</A></P>",
+      htsbuf_qprintf(&hc->hc_reply, "<P><A HREF=\"%s/logout\">Default Login</A></P>",
                      tvheadend_webroot ? tvheadend_webroot : "");
 
     htsbuf_append_str(&hc->hc_reply, "</BODY></HTML>\r\n");
@@ -861,7 +863,7 @@ http_access_verify(http_connection_t *hc, int mask)
       hc->hc_access = NULL;
       return -1;
     }
-    hc->hc_access = access_get((struct sockaddr *)hc->hc_peer, hc->hc_username,
+    hc->hc_access = access_get(hc->hc_peer, hc->hc_username,
                                http_verify_callback, &v);
     http_verify_free(&v);
     if (hc->hc_access)
@@ -897,7 +899,7 @@ http_access_verify_channel(http_connection_t *hc, int mask,
       hc->hc_access = NULL;
       return -1;
     }
-    hc->hc_access = access_get((struct sockaddr *)hc->hc_peer, hc->hc_username,
+    hc->hc_access = access_get(hc->hc_peer, hc->hc_username,
                                http_verify_callback, &v);
     http_verify_free(&v);
     if (hc->hc_access) {
@@ -1100,7 +1102,13 @@ process_request(http_connection_t *hc, htsbuf_queue_t *spill)
   char authbuf[150];
 
   hc->hc_url_orig = tvh_strdupa(hc->hc_url);
-  tcp_get_str_from_ip((struct sockaddr*)hc->hc_peer, authbuf, sizeof(authbuf));
+
+  v = (config.proxy) ? http_arg_get(&hc->hc_args, "X-Forwarded-For") : NULL;
+  if (v)
+    tcp_get_ip_from_str(v, hc->hc_peer);
+
+  tcp_get_str_from_ip(hc->hc_peer, authbuf, sizeof(authbuf));
+
   hc->hc_peer_ipstr = tvh_strdupa(authbuf);
   hc->hc_representative = hc->hc_peer_ipstr;
   hc->hc_username = NULL;
@@ -1443,8 +1451,8 @@ void
 http_serve_requests(http_connection_t *hc)
 {
   htsbuf_queue_t spill;
-  char *argv[3], *c, *cmdline = NULL, *hdrline = NULL;
-  int n, r;
+  char *argv[3], *c, *s, *cmdline = NULL, *hdrline = NULL;
+  int n, r, delim;
 
   pthread_mutex_init(&hc->hc_fd_lock, NULL);
   http_arg_init(&hc->hc_args);
@@ -1459,6 +1467,52 @@ http_serve_requests(http_connection_t *hc)
 
     if ((cmdline = tcp_read_line(hc->hc_fd, &spill)) == NULL)
       goto error;
+
+    /* PROXY Protocol v1 support
+     * Format: 'PROXY TCP4 192.168.0.1 192.168.0.11 56324 9981\r\n'
+     *                     SRC-ADDRESS DST-ADDRESS  SPORT DPORT */
+    if (config.proxy && strncmp(cmdline, "PROXY ", 6) == 0) {
+      tvhtrace(LS_HTTP, "[PROXY] PROXY protocol detected! cmdline='%s'", cmdline);
+
+      argv[0] = cmdline;
+      s = cmdline + 6;
+
+      if ((cmdline = tcp_read_line(hc->hc_fd, &spill)) == NULL)
+        goto error;  /* No more data after the PROXY protocol */
+        
+      delim = '.';
+      if (strncmp(s, "TCP6 ", 5) == 0) {
+        delim = ':';
+      } else if (strncmp(s, "TCP4 ", 5) != 0) {
+        goto error;
+      }
+
+      s += 5;
+
+      /* Check the SRC-ADDRESS */
+      for (c = s; *c != ' '; c++) {
+        if (*c == '\0') goto error;  /* Incomplete PROXY format */
+        if (*c != delim && (*c < '0' || *c > '9')) {
+          if (delim == ':') {
+            if (*c >= 'a' && *c <= 'f') continue;
+            if (*c >= 'A' && *c <= 'F') continue;
+          }
+          goto error;  /* Not valid IP address */
+        }
+      }
+      /* Check length */
+      if ((s-c) < 8) goto error;
+      if ((s-c) > (delim == ':' ? 39 : 16)) goto error;
+      
+      /* Add null terminator */
+      *(c-1) = '\0';
+
+      /* Don't care about DST-ADDRESS, SRC-PORT & DST-PORT
+         All it's OK, push the original client IP */
+      tvhtrace(LS_HTTP, "[PROXY] Original source='%s'", s);
+      http_arg_set(&hc->hc_args, "X-Forwarded-For", s);
+      free(argv[0]);
+    }
 
     if((n = http_tokenize(cmdline, argv, 3, -1)) != 3)
       goto error;

@@ -850,16 +850,16 @@ scleanup:
           extra_size = 7;
       }
 
-      n = pkt_alloc(NULL, packet.size + extra_size, packet.pts, packet.pts);
+      n = pkt_alloc(ts->ts_type, NULL, packet.size + extra_size, packet.pts, packet.pts);
       memcpy(pktbuf_ptr(n->pkt_payload) + extra_size, packet.data, packet.size);
 
       n->pkt_componentindex = ts->ts_index;
-      n->pkt_channels       = octx->channels;
-      n->pkt_sri            = rate_to_sri(octx->sample_rate);
+      n->a.pkt_channels     = octx->channels;
+      n->a.pkt_sri          = rate_to_sri(octx->sample_rate);
       n->pkt_duration       = packet.duration;
 
       if (extra_size && ts->ts_type == SCT_AAC)
-        create_adts_header(n->pkt_payload, n->pkt_sri, octx->channels);
+        create_adts_header(n->pkt_payload, n->a.pkt_sri, octx->channels);
 
       if (octx->extradata_size)
         n->pkt_meta = pktbuf_alloc(octx->extradata, octx->extradata_size);
@@ -969,25 +969,25 @@ send_video_packet(transcoder_t *t, transcoder_stream_t *ts, th_pkt_t *pkt,
   if ((ts->ts_type == SCT_H264 || ts->ts_type == SCT_HEVC) &&
       octx->extradata_size &&
       (ts->ts_first || octx->coded_frame->pict_type == AV_PICTURE_TYPE_I)) {
-    n = pkt_alloc(NULL, octx->extradata_size + epkt->size, epkt->pts, epkt->dts);
+    n = pkt_alloc(ts->ts_type, NULL, octx->extradata_size + epkt->size, epkt->pts, epkt->dts);
     memcpy(pktbuf_ptr(n->pkt_payload), octx->extradata, octx->extradata_size);
     memcpy(pktbuf_ptr(n->pkt_payload) + octx->extradata_size, epkt->data, epkt->size);
     ts->ts_first = 0;
   } else {
-    n = pkt_alloc(epkt->data, epkt->size, epkt->pts, epkt->dts);
+    n = pkt_alloc(ts->ts_type, epkt->data, epkt->size, epkt->pts, epkt->dts);
   }
 
   switch (octx->coded_frame->pict_type) {
   case AV_PICTURE_TYPE_I:
-    n->pkt_frametype = PKT_I_FRAME;
+    n->v.pkt_frametype = PKT_I_FRAME;
     break;
 
   case AV_PICTURE_TYPE_P:
-    n->pkt_frametype = PKT_P_FRAME;
+    n->v.pkt_frametype = PKT_P_FRAME;
     break;
 
   case AV_PICTURE_TYPE_B:
-    n->pkt_frametype = PKT_B_FRAME;
+    n->v.pkt_frametype = PKT_B_FRAME;
     break;
 
   default:
@@ -997,9 +997,9 @@ send_video_packet(transcoder_t *t, transcoder_stream_t *ts, th_pkt_t *pkt,
   n->pkt_duration       = pkt->pkt_duration;
   n->pkt_commercial     = pkt->pkt_commercial;
   n->pkt_componentindex = pkt->pkt_componentindex;
-  n->pkt_field          = pkt->pkt_field;
-  n->pkt_aspect_num     = pkt->pkt_aspect_num;
-  n->pkt_aspect_den     = pkt->pkt_aspect_den;
+  n->v.pkt_field        = pkt->v.pkt_field;
+  n->v.pkt_aspect_num   = pkt->v.pkt_aspect_num;
+  n->v.pkt_aspect_den   = pkt->v.pkt_aspect_den;
 
   if(octx->coded_frame && octx->coded_frame->pts != AV_NOPTS_VALUE) {
     if(n->pkt_dts != PTS_UNSET)
@@ -1213,7 +1213,7 @@ transcoder_stream_video(transcoder_t *t, transcoder_stream_t *ts, th_pkt_t *pkt)
   if (!vs->vid_first_sent) {
     /* notify global headers that we're live */
     /* the video packets might be delayed */
-    pkt2 = pkt_alloc(NULL, 0, pkt->pkt_pts, pkt->pkt_dts);
+    pkt2 = pkt_alloc(ts->ts_type, NULL, 0, pkt->pkt_pts, pkt->pkt_dts);
     pkt2->pkt_componentindex = pkt->pkt_componentindex;
     sm = streaming_msg_create_pkt(pkt2);
     streaming_target_deliver2(ts->ts_target, sm);

@@ -811,7 +811,7 @@ htsp_build_channel(channel_t *ch, const char *method, htsp_connection_t *htsp)
       char buf[50];
       addrlen = sizeof(addr);
       getsockname(htsp->htsp_fd, (struct sockaddr*)&addr, &addrlen);
-      tcp_get_str_from_ip((struct sockaddr*)&addr, buf, 50);
+      tcp_get_str_from_ip(&addr, buf, 50);
       snprintf(url, sizeof(url), "http://%s%s%s:%d%s/%s",
                     (addr.ss_family == AF_INET6)?"[":"",
                     buf,
@@ -2978,7 +2978,7 @@ htsp_authenticate(htsp_connection_t *htsp, htsmsg_t *m)
 
     vs.digest = digest;
     vs.challenge = htsp->htsp_challenge;
-    rights = access_get((struct sockaddr *)htsp->htsp_peer, username,
+    rights = access_get(htsp->htsp_peer, username,
                         htsp_verify_callback, &vs);
 
     if (rights->aa_rights == 0) {
@@ -3098,8 +3098,7 @@ htsp_read_loop(htsp_connection_t *htsp)
 
   pthread_mutex_lock(&global_lock);
 
-  htsp->htsp_granted_access = 
-    access_get_by_addr((struct sockaddr *)htsp->htsp_peer);
+  htsp->htsp_granted_access = access_get_by_addr(htsp->htsp_peer);
   htsp->htsp_granted_access->aa_rights |= ACCESS_HTSP_INTERFACE;
 
   tcp_id = tcp_connection_launch(htsp->htsp_fd, htsp_server_status,
@@ -3266,7 +3265,7 @@ htsp_serve(int fd, void **opaque, struct sockaddr_storage *source,
   if (config.dscp >= 0)
     socket_set_dscp(fd, config.dscp, NULL, 0);
 
-  tcp_get_str_from_ip((struct sockaddr*)source, buf, 50);
+  tcp_get_str_from_ip(source, buf, 50);
 
   memset(&htsp, 0, sizeof(htsp_connection_t));
   *opaque = &htsp;
@@ -3829,6 +3828,7 @@ htsp_stream_deliver(htsp_subscription_t *hs, th_pkt_t *pkt)
   htsp_connection_t *htsp = hs->hs_htsp;
   int64_t ts;
   int qlen = hs->hs_q.hmq_payload;
+  int video = SCT_ISVIDEO(pkt->pkt_type);
   size_t payloadlen;
 
   if (pkt->pkt_err)
@@ -3842,11 +3842,12 @@ htsp_stream_deliver(htsp_subscription_t *hs, th_pkt_t *pkt)
     return;
   }
 
-  if((qlen > hs->hs_queue_depth     && pkt->pkt_frametype == PKT_B_FRAME) ||
-     (qlen > hs->hs_queue_depth * 2 && pkt->pkt_frametype == PKT_P_FRAME) || 
-     (qlen > hs->hs_queue_depth * 3)) {
+  if(video &&
+     ((qlen > hs->hs_queue_depth     && pkt->v.pkt_frametype == PKT_B_FRAME) ||
+      (qlen > hs->hs_queue_depth * 2 && pkt->v.pkt_frametype == PKT_P_FRAME) ||
+      (qlen > hs->hs_queue_depth * 3))) {
 
-    hs->hs_dropstats[pkt->pkt_frametype]++;
+    hs->hs_dropstats[pkt->v.pkt_frametype]++;
 
     /* Queue size protection */
     pkt_ref_dec(pkt);
@@ -3857,7 +3858,8 @@ htsp_stream_deliver(htsp_subscription_t *hs, th_pkt_t *pkt)
  
   htsmsg_add_str(m, "method", "muxpkt");
   htsmsg_add_u32(m, "subscriptionId", hs->hs_sid);
-  htsmsg_add_u32(m, "frametype", frametypearray[pkt->pkt_frametype]);
+  if (video)
+    htsmsg_add_u32(m, "frametype", frametypearray[pkt->v.pkt_frametype]);
 
   htsmsg_add_u32(m, "stream", pkt->pkt_componentindex);
   htsmsg_add_u32(m, "com", pkt->pkt_commercial);
@@ -4007,6 +4009,8 @@ htsp_subscription_start(htsp_subscription_t *hs, const streaming_start_t *ss)
     if (SCT_ISAUDIO(ssc->ssc_type))
     {
       htsmsg_add_u32(c, "audio_type", ssc->ssc_audio_type);
+      if (ssc->ssc_audio_version)
+        htsmsg_add_u32(c, "audio_version", ssc->ssc_audio_version);
       if (ssc->ssc_channels)
         htsmsg_add_u32(c, "channels", ssc->ssc_channels);
       if (ssc->ssc_sri)
