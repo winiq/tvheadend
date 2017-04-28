@@ -127,6 +127,7 @@ typedef struct elementary_stream {
 
   tvhlog_limit_t es_cc_log;
   tvhlog_limit_t es_pes_log;
+  tvhlog_limit_t es_pcr_log;
   
   char *es_nicename;
 
@@ -484,7 +485,8 @@ typedef struct service {
 
   tvhlog_limit_t s_tei_log;
 
-  int64_t s_current_pts;
+  int64_t s_current_pcr;
+  int64_t s_candidate_pcr;
 
   /*
    * Local channel numbers per bouquet

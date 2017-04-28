@@ -310,6 +310,7 @@ stream_clean(elementary_stream_t *st)
 
   tvhlog_limit_reset(&st->es_cc_log);
   tvhlog_limit_reset(&st->es_pes_log);
+  tvhlog_limit_reset(&st->es_pcr_log);
 }
 
 /**
@@ -704,7 +705,8 @@ service_start(service_t *t, int instance, int weight, int flags,
   pthread_mutex_lock(&t->s_stream_mutex);
 
   t->s_status = SERVICE_RUNNING;
-  t->s_current_pts = PTS_UNSET;
+  t->s_current_pcr = PTS_UNSET;
+  t->s_candidate_pcr = PTS_UNSET;
 
   /**
    * Initialize stream
