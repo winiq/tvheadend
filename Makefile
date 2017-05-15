@@ -660,7 +660,9 @@ $(ROOTDIR)/src/version.c: FORCE
 FORCE:
 
 # Include dependency files if they exist.
+ifeq ($(filter clean distclean, $(MAKECMDGOALS)),)
 -include $(DEPS)
+endif
 
 # Some hardcoded deps
 src/webui/extjs.c: make_webui
@@ -781,7 +783,7 @@ endif
 
 # linuxdvb git tree
 $(ROOTDIR)/data/dvb-scan/.stamp:
-	@echo "Receiving data/dvb-scan/dvb-t from https://github.com/tvheadend/dtv-scan-tables.git#tvheadend"
+	@echo "Receiving data/dvb-scan from https://github.com/tvheadend/dtv-scan-tables.git#tvheadend"
 	@rm -rf $(ROOTDIR)/data/dvb-scan/*
 	@$(ROOTDIR)/support/getmuxlist $(ROOTDIR)/data/dvb-scan
 	@touch $@

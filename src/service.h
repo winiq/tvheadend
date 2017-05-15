@@ -209,6 +209,8 @@ typedef struct service_lcn {
 #define SERVICE_AUTO_OFF          1
 #define SERVICE_AUTO_PAT_MISSING  2
 
+#define SERVICE_PMT_AUTO	  0xffff
+
 /**
  *
  */
@@ -541,6 +543,9 @@ service_stream_find(service_t *t, int pid)
   else
     return t->s_last_es;
 }
+
+elementary_stream_t *
+service_stream_type_find(service_t *t, streaming_component_type_t type);
 
 elementary_stream_t *service_stream_create(service_t *t, int pid,
 				     streaming_component_type_t type);

@@ -247,11 +247,13 @@ dvb_desc_sat_del
     DVB_ROLLOFF_35, DVB_ROLLOFF_25, DVB_ROLLOFF_20, DVB_ROLLOFF_AUTO
   };
   dmc.dmc_fe_modulation = mtab[ptr[6] & 0x3];
+#if 0
   if (dmc.dmc_fe_modulation != DVB_MOD_NONE &&
       dmc.dmc_fe_modulation != DVB_MOD_QPSK)
     /* standard DVB-S allows only QPSK */
     /* on 13.0E, there are (ptr[6] & 4) == 0 muxes with 8PSK and DVB-S2 */
     dmc.dmc_fe_delsys = DVB_SYS_DVBS2;
+#endif
   dmc.dmc_fe_rolloff    = rtab[(ptr[6] >> 3) & 0x3];
   if (dmc.dmc_fe_delsys == DVB_SYS_DVBS &&
       dmc.dmc_fe_rolloff != DVB_ROLLOFF_35) {
@@ -479,7 +481,7 @@ dvb_desc_service_list
 
 static int
 dvb_desc_local_channel
-  ( mpegts_table_t *mt, const uint8_t *ptr, int len,
+  ( mpegts_table_t *mt, mpegts_network_t *mn, const uint8_t *ptr, int len,
     uint8_t dtag, mpegts_mux_t *mm, dvb_bat_id_t *bi, int prefer )
 {
   int save = 0;
@@ -503,6 +505,7 @@ dvb_desc_local_channel
                     s->s_dvb_channel_num != lcn) {
           s->s_dvb_channel_dtag = dtag;
           s->s_dvb_channel_num = lcn;
+          mpegts_network_bouquet_trigger(mn, 0);
           idnode_changed(&s->s_id);
           service_refresh_channel((service_t*)s);
         }
@@ -1190,12 +1193,14 @@ dvb_nit_mux
   int dllen, dlen;
   const uint8_t *dlptr, *dptr, *lptr_orig = lptr;
   const char *charset;
+  mpegts_network_t *mn;
   char buf[128], dauth[256];
 
   if (mux && mux->mm_enabled != MM_ENABLE)
     bi = NULL;
 
-  charset = dvb_charset_find(mux ? mux->mm_network : mm->mm_network, mux, NULL);
+  mn = mux ? mux->mm_network : mm->mm_network;
+  charset = dvb_charset_find(mn, mux, NULL);
 
   if (mux)
     mpegts_mux_nice_name(mux, buf, sizeof(buf));
@@ -1286,7 +1291,8 @@ dvb_nit_mux
       break;
     case 0x83:
       if (priv == 0 || priv == 0x28 || priv == 0x29 || priv == 0xa5 ||
-          priv == 0x233A || priv == 0x3200 || priv == 0x3201) goto lcn;
+          priv == 0x212c || priv == 0x233A ||
+          priv == 0x3200 || priv == 0x3201) goto lcn;
       break;
     case 0x86:
       if (priv == 0) goto lcn;
@@ -1294,7 +1300,7 @@ dvb_nit_mux
     case 0x88:
       if (priv == 0x28) {
         /* HD simulcast */
-        if (dvb_desc_local_channel(mt, dptr, dlen, dtag, mux, bi, 1))
+        if (dvb_desc_local_channel(mt, mn, dptr, dlen, dtag, mux, bi, 1))
           return -1;
       }
       break;
@@ -1302,7 +1308,7 @@ dvb_nit_mux
       if (priv == 0 || priv == 0x362275)
       /* fall thru */
 lcn:
-      if (dvb_desc_local_channel(mt, dptr, dlen, dtag, mux, bi, 0))
+      if (dvb_desc_local_channel(mt, mn, dptr, dlen, dtag, mux, bi, 0))
         return -1;
       break;
     case DVB_DESC_FREESAT_LCN:
@@ -1331,7 +1337,7 @@ int
 dvb_nit_callback
   (mpegts_table_t *mt, const uint8_t *ptr, int len, int tableid)
 {
-  int save = 0;
+  int save = 0, retry = 0;
   int r, sect, last, ver;
   uint32_t priv = 0;
   uint8_t  dtag;
@@ -1503,19 +1509,24 @@ dvb_nit_callback
       }
     } else
 #endif
-    LIST_FOREACH(mux, &mn->mn_muxes, mm_network_link)
+    LIST_FOREACH(mux, &mn->mn_muxes, mm_network_link) {
       if (mux->mm_onid == onid && mux->mm_tsid == tsid &&
           (mm == mux || mpegts_mux_alive(mux))) {
         r = dvb_nit_mux(mt, mux, mm, onid, tsid, lptr, llen, tableid, bi, 0);
         if (r < 0)
           return r;
       }
+      if (mux->mm_onid == 0xffff && mux->mm_tsid == tsid)
+        retry = 1; /* keep rolling - perhaps PAT was not parsed yet */
+    }
       
     lptr += r;
     llen -= r;
   }
 
   /* End */
+  if (retry)
+    return 0;
   return dvb_table_end((mpegts_psi_table_t *)mt, st, sect);
 }
 
@@ -1801,6 +1812,7 @@ atsc_vct_callback
           save = 1;
         }
         if (s->s_dvb_channel_num != maj || s->s_dvb_channel_minor != min) {
+          mpegts_network_bouquet_trigger(mn, 0);
           s->s_dvb_channel_num = maj;
           s->s_dvb_channel_minor = min;
           save = 1;
@@ -2229,6 +2241,7 @@ psi_parse_pmt
   int position;
   int tt_position;
   int video_stream;
+  int pcr_shared = 0;
   const char *lang;
   uint8_t audio_type, audio_version;
   mpegts_mux_t *mux = mt->mt_mux;
@@ -2469,8 +2482,21 @@ psi_parse_pmt
         st->es_ancillary_id = ancillary_id;
         update |= PMT_UPDATE_ANCILLARY_ID;
       }
+
+      if (st->es_pid == t->s_pcr_pid)
+        pcr_shared = 1;
     }
     position++;
+  }
+
+  /* Handle PCR 'elementary stream' */
+  if (!pcr_shared) {
+    st = service_stream_type_find((service_t *)t, SCT_PCR);
+    if (st)
+      st->es_pid = t->s_pcr_pid;
+    else
+      st = service_stream_create((service_t*)t, t->s_pcr_pid, SCT_PCR);
+    st->es_delete_me = 0;
   }
 
   /* Scan again to see if any streams should be deleted */
