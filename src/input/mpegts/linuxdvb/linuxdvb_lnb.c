@@ -221,7 +221,7 @@ linuxdvb_lnb_conf_t linuxdvb_lnb_all[] = {
     },
     .lnb_low    =  9750000,
     .lnb_high   = 10600000,
-    .lnb_switch = 11700000,
+    .lnb_switch = 11600000,
   },
   {
     { {
